@@ -1,3 +1,4 @@
 - [ ] proxy factory
 - [ ] config reader (in yaml of course)
 - [ ] colorized formatters for loggers
+- [ ] add log watchers for proxied servers

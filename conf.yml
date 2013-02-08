@@ -1,0 +1,12 @@
+api1:
+  proxy:
+    host: 127.0.0.1
+    port: 9292
+
+  workers:
+    worker1:
+      host: 127.0.0.1
+      port: 9300
+    worker2:
+      host: 127.0.0.1
+      port: 9301

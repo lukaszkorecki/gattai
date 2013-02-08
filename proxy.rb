@@ -1,37 +1,78 @@
 require 'eventmachine'
 require 'em-proxy'
+require 'logger'
 
 
-class ProxyFactory # ugh
+class Gattai
   LOCALHOST="127.0.0.1"
-  def initialize bind_to={ host: LOCALHOST, port: 3000} , workers=[ { name: "worker_1", host: LOCALHOST, port: 3001}]
-    @host = bind_to.fetch :host
-    @port = bind_to.fetch :port
-    @wokers = workers
-    @logger = ::Logger.new STDOUT # TODO configurable?
+  def initialize name, config
+    @name = name
+    @workers = []
+
+    create_logger
+
+    set_main_proxy config['proxy']
+    config['workers'].each {|worker_name, worker_conf| add_worker worker_name, worker_conf }
+    @log.warn "Creating proxy: #{@name} with #{@workers.count} workers"
   end
 
   def start
-    Proxy.start(host: @host, port: @port) do |conn|
-      @workers.each_with_index do |worker|
-        conn.server worker[:name].to_sym, host: worker[:host], port: worker[:port]
+    @log.warn "Starting #@name proxy"
+    log = @log
+
+    this = self
+    ::Proxy.start(host: @host, port: @port) do |conn|
+      puts this.log
+      puts this.workers
+      this.workers.each do |worker|
+        conn.server worker['name'].to_sym, host: worker['host'], port: worker['port']
       end
 
-
-      conn.on_data { |data| @logger.info [:on_data, data] ;  data }
-      conn.on_response { |server, resp| @logger.info [ :on_response, server, resp ] ;  resp }
+      conn.on_data { |data| data }
+      conn.on_response { |server, resp| this.log.info  server ;  resp }
     end
+  end
+
+  def workers
+    @workers
+  end
+
+  def log
+    @log
+  end
+  private
+
+  def create_logger
+    @log = ::Logger.new STDOUT
+    @log.formatter = proc do |severity, datetime, progname, msg|
+      "|| #{@name} #{severity} #{datetime}: #{msg}\n"
+    end
+  end
+
+  def set_main_proxy conf
+    @host = conf['host'] || LOCALHOST
+    @port = conf.fetch 'port'
+  end
+
+  def add_worker name, conf
+    @workers << {
+      'name' =>  name.to_sym,
+      'host' => conf['host'] || LOCALHOST,
+      'port' => conf.fetch('port')
+    }
   end
 end
 
-# not sure about :symbols here
-workers = [
-  { name: 'worker_1', port: 3001, host: '127.0.0.1' },
-  { name: 'worker_2', port: 3002, host: '127.0.0.1' }
-]
+# ok!
+puts "Loading config from #{ARGV[0]}"
+config = YAML::load_file(ARGV[0])
+thread_pool = []
 
-t1 = Thread.new do
-  ProxyFactory.new({host: '127.0.0.1', port: 3000}, workers).start
-
+config.each do |name, proxy_config|
+  thread_pool << Thread.new do
+    proxy = Gattai.new(name, proxy_config)
+    proxy.start
+  end
 end
-[t1].map(&:join)
+
+thread_pool.map(&:join)
